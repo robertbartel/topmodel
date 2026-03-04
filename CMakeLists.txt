@@ -23,6 +23,7 @@ endif()
 
 target_compile_definitions(topmodelbmi PRIVATE BMI_ACTIVE)
 target_include_directories(topmodelbmi PRIVATE include)
+target_link_libraries(topmodelbmi m)
 set_target_properties(topmodelbmi PROPERTIES
         VERSION ${PROJECT_VERSION}
         PUBLIC_HEADER include/bmi_topmodel.h
@@ -33,12 +34,15 @@ set_target_properties(topmodelbmi PROPERTIES
 # Stuff for standalone driver executable
 add_executable(topmodeldriver src/main.c src/bmi_topmodel.c src/topmodel.c)
 target_include_directories(topmodeldriver PRIVATE include)
+target_link_libraries(topmodeldriver m)
 ####################
 
 ####################
 # Stuff for simple test routine
 add_executable(simple_unit_tests test/main_unit_test_bmi.c src/bmi_topmodel.c src/topmodel.c)
 target_compile_definitions(simple_unit_tests PRIVATE REPO_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(simple_unit_tests PRIVATE include)
+target_link_libraries(simple_unit_tests m)
 if (TESTS_WITH_ASAN)
     # Seems this should work in all compiler
     target_compile_options(simple_unit_tests PRIVATE -fsanitize=address)
