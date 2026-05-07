@@ -104,3 +104,8 @@ params/data/TopModel_Results/
 # Misc #
 ########
 make_and_run_bmi.sh
+test/test_array_alloc
+test/test_edge_cases
+test/test_multi_step
+test/test_shift_q
+test/test_topmodel_calcs
