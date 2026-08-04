@@ -9,13 +9,13 @@ option(TESTS_WITH_ASAN  "Enable AddressSanitizer on the test targets"   ON)
 # Use 1 by default when build type is "Debug"
 if (NOT DEFINED DEBUG_VERBOSITY AND "${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
     set(DEBUG_VERBOSITY 1)
-    # Use 0 by default for any build types other than "Debug"
+# Use 0 by default for any build types other than "Debug"
 elseif (NOT DEFINED DEBUG_VERBOSITY)
     set(DEBUG_VERBOSITY 0)
-    # Catch any "ON" or equivalent, excluding all integers other than "1" (which we want to handle separately)
+# Catch any "ON" or equivalent, excluding all integers other than "1" (which we want to handle separately)
 elseif (${DEBUG_VERBOSITY} AND NOT ${DEBUG_VERBOSITY} GREATER "1" AND NOT ${DEBUG_VERBOSITY} LESS_EQUAL "0")
     set(DEBUG_VERBOSITY 1)
-    # Should catch any other values except an integer greater than 1 (which we want to use directly)
+# Should catch any other values except an integer greater than 1 (which we want to use directly)
 elseif (NOT ${DEBUG_VERBOSITY} GREATER "1")
     set(DEBUG_VERBOSITY 0)
 endif ()
