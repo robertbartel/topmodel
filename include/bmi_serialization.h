@@ -8,7 +8,7 @@ extern "C" {
 #include "bmi.h"
 
 const int serialize_topmodel(Bmi* bmi);
-const int deserialize_topmodel(Bmi* bmi, const char* buffer);
+const int deserialize_topmodel(Bmi* bmi, char* buffer);
 
 #ifdef __cplusplus
 }
