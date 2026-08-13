@@ -6,7 +6,6 @@
 #include <float.h>
 #include <math.h>
 #include <string.h>
-#include <stdint.h>
 
 #define TRUE  1
 #define FALSE 0
@@ -190,8 +189,8 @@ struct TopModel_Struct{
   //double dbl_arr_test[3];
 
   /************** Model State **************/
-  char* serialized;
-  uint64_t serialized_length;
+  char* serialized;      /* serialized state buffer; NULL when none held */
+  int serialized_length; /* bytes in serialized; int because GetValue hands out its address */
 
 };
 
