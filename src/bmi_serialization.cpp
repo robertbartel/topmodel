@@ -27,10 +27,23 @@ class TopmodelSerializer {
         void serialize(Archive& ar, const unsigned int version);
 };
 
+/* Bump on any change to what serialize() archives, so that older payloads are
+   rejected rather than misread.  Boost stores this in the archive itself. */
+#define TOPMODEL_SERIALIZATION_LAYOUT_VERSION 1
+BOOST_CLASS_VERSION(TopmodelSerializer, TOPMODEL_SERIALIZATION_LAYOUT_VERSION)
+
 
 template<class Archive>
 void TopmodelSerializer::serialize(Archive& ar, const unsigned int version) {
     topmodel_model* model = this->model;
+    // Check before archiving anything, so a rejected payload leaves state untouched
+    if (Archive::is_loading::value && version != TOPMODEL_SERIALIZATION_LAYOUT_VERSION) {
+        char error[128];
+        snprintf(error, sizeof(error),
+                 "state is layout version %u, but this build expects %d",
+                 version, TOPMODEL_SERIALIZATION_LAYOUT_VERSION);
+        throw std::runtime_error(error);
+    }
     if (model->stand_alone == TRUE) {
         // the number of timesteps makes hindcasting nigh imposible when stand alone
         auto error = "Topmodel serialization is not currently implemented when running stand alone.";
@@ -115,8 +128,9 @@ extern "C" {
 const int serialize_topmodel(Bmi* bmi) {
     TopmodelSerializer serializer(bmi);
     vecbuf<char> stream;
-    boost::archive::binary_oarchive archive(stream);
     try {
+        // Constructing the archive writes the header, so it belongs inside the try
+        boost::archive::binary_oarchive archive(stream);
         archive << serializer;
     } catch (const std::exception& e) {
         fprintf(stderr, "Serializing Topmodel encountered an error: %s\n", e.what());
@@ -157,8 +171,10 @@ const int deserialize_topmodel(Bmi* bmi, char* buffer) {
     memcpy(&size, buffer, sizeof(uint64_t));
     // create stream from data after header
     membuf stream(buffer + sizeof(uint64_t), size);
-    boost::archive::binary_iarchive archive(stream);
     try {
+        // Constructing the archive validates the header, so it belongs inside the
+        // try; otherwise a foreign or corrupt payload escapes as an exception
+        boost::archive::binary_iarchive archive(stream);
         archive >> serializer;
         return BMI_SUCCESS;
     } catch (const std::exception &e) {
