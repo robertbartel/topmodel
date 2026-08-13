@@ -32,19 +32,38 @@ set(TOPMODEL_LIB_DESC_CMAKE "OWP TOPMODEL Model and BMI Module Shared Library")
 # Some global properties
 set_property(GLOBAL PROPERTY C_STANDARD 99)      # Note that code requires minimum of C99 standard to compile
 set_property(GLOBAL PROPERTY C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)                       # State serialization is implemented in C++
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+####################
+
+####################
+# Boost, for state serialization.  Version floor matches ngen's.
+if (POLICY CMP0144)
+    cmake_policy(SET CMP0144 NEW)    # Honor the BOOST_ROOT environment variable
+endif ()
+if (POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)    # Prefer Boost's own config over the removed FindBoost module
+endif ()
+# A Boost built in place with b2 stages its libraries and CMake config files under
+# <BOOST_ROOT>/stage, which is not a prefix find_package would search on its own.
+if (DEFINED ENV{BOOST_ROOT} AND IS_DIRECTORY "$ENV{BOOST_ROOT}/stage/lib/cmake")
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{BOOST_ROOT}/stage")
+endif ()
+set(Boost_USE_STATIC_LIBS OFF)
+find_package(Boost 1.86.0 REQUIRED COMPONENTS serialization)
 ####################
 
 ####################
 # Stuff for shared library
 if(WIN32)
-    add_library(topmodelbmi src/bmi_topmodel.c src/topmodel.c)
+    add_library(topmodelbmi src/bmi_topmodel.c src/topmodel.c src/bmi_serialization.cpp)
 else()
-    add_library(topmodelbmi SHARED src/bmi_topmodel.c src/topmodel.c)
+    add_library(topmodelbmi SHARED src/bmi_topmodel.c src/topmodel.c src/bmi_serialization.cpp)
 endif()
 
 target_compile_definitions(topmodelbmi PRIVATE BMI_ACTIVE)
 target_include_directories(topmodelbmi PRIVATE include)
-target_link_libraries(topmodelbmi m)
+target_link_libraries(topmodelbmi m Boost::serialization)
 set_target_properties(topmodelbmi PROPERTIES
         VERSION ${PROJECT_VERSION}
         PUBLIC_HEADER include/bmi_topmodel.h
@@ -53,17 +72,17 @@ set_target_properties(topmodelbmi PROPERTIES
 
 ####################
 # Stuff for standalone driver executable
-add_executable(topmodeldriver src/main.c src/bmi_topmodel.c src/topmodel.c)
+add_executable(topmodeldriver src/main.c src/bmi_topmodel.c src/topmodel.c src/bmi_serialization.cpp)
 target_include_directories(topmodeldriver PRIVATE include)
-target_link_libraries(topmodeldriver m)
+target_link_libraries(topmodeldriver m Boost::serialization)
 ####################
 
 ####################
 # Stuff for simple test routine
-add_executable(simple_unit_tests test/main_unit_test_bmi.c src/bmi_topmodel.c src/topmodel.c)
+add_executable(simple_unit_tests test/main_unit_test_bmi.c src/bmi_topmodel.c src/topmodel.c src/bmi_serialization.cpp)
 target_compile_definitions(simple_unit_tests PRIVATE REPO_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(simple_unit_tests PRIVATE include)
-target_link_libraries(simple_unit_tests m)
+target_link_libraries(simple_unit_tests m Boost::serialization)
 if (TESTS_WITH_ASAN)
     # Seems this should work in all compiler
     target_compile_options(simple_unit_tests PRIVATE -fsanitize=address)
