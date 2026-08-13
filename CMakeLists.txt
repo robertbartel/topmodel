@@ -90,6 +90,18 @@ if (TESTS_WITH_ASAN)
 endif ()
 ####################
 
+####################
+# Stuff for ngen serialization protocol conformance tests
+add_executable(serialization_unit_tests test/main_unit_test_serialization.c src/bmi_topmodel.c src/topmodel.c src/bmi_serialization.cpp)
+target_compile_definitions(serialization_unit_tests PRIVATE REPO_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(serialization_unit_tests PRIVATE include)
+target_link_libraries(serialization_unit_tests m Boost::serialization)
+if (TESTS_WITH_ASAN)
+    target_compile_options(serialization_unit_tests PRIVATE -fsanitize=address)
+    target_link_options(serialization_unit_tests PRIVATE -fsanitize=address)
+endif ()
+####################
+
 include(GNUInstallDirs)
 
 install(TARGETS topmodelbmi
