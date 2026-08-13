@@ -4,9 +4,7 @@ extern "C" {
 #include <cstdio>
 #include "../include/bmi_serialization.h"
 
-#include <fstream>
-#include <streambuf>
-#include <sstream>
+#include <stdexcept>
 
 #include <boost/serialization/serialization.hpp>
 #include <boost/archive/binary_iarchive.hpp>
@@ -32,6 +30,12 @@ class TopmodelSerializer {
 template<class Archive>
 void TopmodelSerializer::serialize(Archive& ar, const unsigned int version) {
     topmodel_model* model = this->model;
+    if (model->stand_alone == TRUE) {
+        // the number of timesteps makes hindcasting nigh imposible when stand alone
+        auto error = "Topmodel serialization is not currently implemented when running stand alone.";
+        fprintf(stderr, "%s\n", error);
+        throw std::runtime_error(error);
+    }
     ar & model->current_time_step;
 
     // data summed between runs
@@ -62,12 +66,37 @@ void TopmodelSerializer::serialize(Archive& ar, const unsigned int version) {
     ar & boost::serialization::make_array(
         model->deficit_local, num_topodex_values
     );
+
+    // nsteps will always be 1 for non-stand-alone models
     ar & boost::serialization::make_array(
-        model->contrib_area, num_topodex_values
+        model->contrib_area, model->nstep + 1
     );
+
+    // copy the current sizes to detect changes, then archive the model value
+    int num_time_delay_histo_ords = model->num_time_delay_histo_ords;
+    ar & model->num_time_delay_histo_ords;
+    int num_delay = model->num_delay;
+    ar & model->num_delay;
+    size_t num_Q = model->num_delay + model->num_time_delay_histo_ords + 1;
+    if (Archive::is_loading::value) {
+        // if loading and array size has changed, reallocate
+        if (num_time_delay_histo_ords != model->num_time_delay_histo_ords) {
+            if (model->time_delay_histogram != NULL)
+                free(model->time_delay_histogram);
+            model->time_delay_histogram = (double *)malloc(
+                (model->num_time_delay_histo_ords + 1) * sizeof(double)
+            );
+        }
+        if (num_delay != model->num_delay || num_time_delay_histo_ords != model->num_time_delay_histo_ords) {
+            if (model->Q != NULL)
+                free(model->Q);
+            model->Q = (double *)malloc(num_Q * sizeof(double));
+        }
+    }
     ar & boost::serialization::make_array(
-        model->Q, model->num_time_delay_histo_ords + 1
+        model->time_delay_histogram, model->num_time_delay_histo_ords + 1
     );
+    ar & boost::serialization::make_array(model->Q, num_Q);
 }
 
 
@@ -99,15 +128,17 @@ const int serialize_topmodel(Bmi* bmi) {
         free(model->serialized);
     }
     // set size and allocate memory
-    model->serialized_length = stream.size();
-    model->serialized = (char*)malloc(sizeof(char) * model->serialized_length);
+    uint64_t serialized_size = stream.size();
+    model->serialized_length = serialized_size + sizeof(uint64_t);
+    model->serialized = (char*)malloc(model->serialized_length);
     // make sure memory could be allocated
     if (model->serialized == NULL) {
         model->serialized_length = 0;
         return BMI_FAILURE;
     }
     // copy stream data to new allocation
-    memcpy(model->serialized, stream.data(), model->serialized_length);
+    memcpy(model->serialized, &serialized_size, sizeof(uint64_t));
+    memcpy(model->serialized + sizeof(uint64_t), stream.data(), serialized_size);
     return BMI_SUCCESS;
 }
 
@@ -118,9 +149,13 @@ const int serialize_topmodel(Bmi* bmi) {
   * @param buffer Start of data that wil be read as previously serialized state
   * @return int signifiying whether the serialization process completed successfully.
   */
-const int deserialize_topmodel(Bmi* bmi, const char* buffer) {
+const int deserialize_topmodel(Bmi* bmi, char* buffer) {
     TopmodelSerializer serializer(bmi);
-    std::istringstream stream(buffer);
+    // copy size of data out of header
+    uint64_t size;
+    memcpy(&size, buffer, sizeof(uint64_t));
+    // create stream from data after header
+    membuf stream(buffer + sizeof(uint64_t), size);
     boost::archive::binary_iarchive archive(stream);
     try {
         archive >> serializer;
