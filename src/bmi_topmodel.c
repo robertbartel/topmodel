@@ -2,6 +2,7 @@
 #include "../include/bmi.h" 
 #include "../include/bmi_topmodel.h"
 #include "../include/bmi_serialization.h"
+#include "../include/ngen_utilities.h"
 
 /* BMI Adaption: Max i/o file name length changed from 30 to 256 */
 #define MAX_FILENAME_LENGTH 256
@@ -590,18 +591,10 @@ static int Get_var_type (Bmi *self, const char *name, char * type)
             return BMI_SUCCESS;
         }
     }
-    // save state specials
-    if (strcmp(name, "serialization_create") == 0) {
-        strncpy(type, "uint64_t", BMI_MAX_TYPE_NAME);
-        return BMI_SUCCESS;
-    } else if (strcmp(name, "serialization_size") == 0) {
-        strncpy(type, "uint64_t", BMI_MAX_TYPE_NAME);
-        return BMI_SUCCESS;
-    } else if (strcmp(name, "serialization_state") == 0) {
-        strncpy(type, "char", BMI_MAX_TYPE_NAME);
-        return BMI_SUCCESS;
-    } else if (strcmp(name, "serialization_free") == 0) {
-        strncpy(type, "int", BMI_MAX_TYPE_NAME);
+    // Then check to see if a serialization protocol variable
+    int ser_var = serialization_var_index(name);
+    if (ser_var >= 0) {
+        strncpy(type, serialization_var_types[ser_var], BMI_MAX_TYPE_NAME);
         return BMI_SUCCESS;
     }
     // If we get here, it means the variable name wasn't recognized
@@ -663,10 +656,6 @@ static int Get_var_itemsize (Bmi *self, const char *name, int * size)
         *size = sizeof(char);
         return BMI_SUCCESS;
     }
-    else if (strcmp (type, "uint64_t") == 0) {
-        *size = sizeof(uint64_t);
-        return BMI_SUCCESS;
-    }
     else {
         *size = 0;
         return BMI_FAILURE;
@@ -696,6 +685,12 @@ static int Get_var_location (Bmi *self, const char *name, char * location)
 
 static int Get_var_units (Bmi *self, const char *name, char * units)
 {
+    // Serialization protocol variables; this call is the engine's support probe
+    int ser_var = serialization_var_index(name);
+    if (ser_var >= 0) {
+        strncpy(units, serialization_var_units[ser_var], BMI_MAX_UNITS_NAME);
+        return BMI_SUCCESS;
+    }
     // Check to see if in output array first
     for (int i = 0; i < OUTPUT_VAR_NAME_COUNT; i++) {
         if (strcmp(name, output_var_names[i]) == 0) {
@@ -722,6 +717,17 @@ static int Get_var_nbytes (Bmi *self, const char *name, int * nbytes)
     if (item_size_result != BMI_SUCCESS) {
         return BMI_FAILURE;
     }
+    // Serialization protocol variables, which must not fall through to the nstep default
+    int ser_var = serialization_var_index(name);
+    if (ser_var >= 0) {
+        int ser_count = serialization_var_item_count[ser_var];
+        // A restore precedes the first capture, so report 0 rather than failing
+        // when no state has been created yet
+        if (ser_count == 0)
+            ser_count = ((topmodel_model *) self->data)->serialized_length;
+        *nbytes = item_size * ser_count;
+        return BMI_SUCCESS;
+    }
     int item_count = -1;
     for (int i = 0; i < INPUT_VAR_NAME_COUNT; i++) {
         if (strcmp(name, input_var_names[i]) == 0) {
@@ -735,20 +741,6 @@ static int Get_var_nbytes (Bmi *self, const char *name, int * nbytes)
                 item_count = output_var_item_count[i];
                 break;
             }
-        }
-    }
-    // special cases for save state
-    if (item_count < 1) {
-        if (strcmp(name, "serialization_create") == 0 || strcmp(name, "serialization_size") == 0 || strcmp(name, "serialization_free") == 0) {
-            item_count = 1;
-        } else if (strcmp(name, "serialization_state") == 0) {
-            topmodel_model* model = (topmodel_model*)self->data;
-            if (model->serialized == NULL){
-                fprintf(stderr, "topmodel: attempting to access a saved state without a state "
-                                "being created on the model.\n");
-                return BMI_FAILURE;
-            }
-            item_count = model->serialized_length;
         }
     }
     if (item_count < 1)
@@ -944,20 +936,18 @@ static int Get_value_ptr (Bmi *self, const char *name, void **dest)
         return BMI_SUCCESS;
     }
 
-    // serialization commands
-    if (strcmp(name, "serialization_size") == 0) {
-        topmodel_model* topmodel = (topmodel_model*)self->data;
-        if (topmodel->serialized == NULL)
-            return BMI_FAILURE;
-        *dest = (void*)&topmodel->serialized_length;
-        return BMI_SUCCESS;
-    }
-    if (strcmp(name, "serialization_state") == 0) {
-        topmodel_model* topmodel = (topmodel_model*)self->data;
-        if (topmodel->serialized == NULL)
-            return BMI_FAILURE;
-        *dest = topmodel->serialized;
-        return BMI_SUCCESS;
+    // serialization commands; create and free are triggers, with no stored value
+    topmodel_model* topmodel = (topmodel_model*)self->data;
+    switch (serialization_var_index(name)) {
+        case SER_VAR_SIZE:
+            // Legitimately 0 until a state is created, which is what a restore sees
+            *dest = (void*)&topmodel->serialized_length;
+            return BMI_SUCCESS;
+        case SER_VAR_STATE:
+            if (topmodel->serialized == NULL)
+                return BMI_FAILURE;
+            *dest = topmodel->serialized;
+            return BMI_SUCCESS;
     }
 
     return BMI_FAILURE;
@@ -1008,31 +998,29 @@ static int Set_value (Bmi *self, const char *name, void *array)
     void * dest = NULL;
     int nbytes = 0;
 
-    // special cases for serialized data
-    if (strcmp(name, "serialization_free") == 0) {
-        topmodel_model* model = (topmodel_model*)self->data;
-        if (model->serialized != NULL) 
-            free(model->serialized);
-        model->serialized = NULL;
-        model->serialized_length = 0;
-        return BMI_SUCCESS;
-    } else if (strcmp(name, "serialization_create") == 0) {
-        // create new serialized data
-        if (serialize_topmodel(self) != BMI_SUCCESS)
-            return BMI_FAILURE;
-        return BMI_SUCCESS;
-    } else if (strcmp(name, "serialization_state") == 0) {
-        if (deserialize_topmodel(self, (char*)array) == BMI_SUCCESS) {
-            topmodel_model* model = (topmodel_model*)self->data;
+    // special cases for serialized data; the value passed to a trigger is ignored
+    topmodel_model* model = (topmodel_model*)self->data;
+    switch (serialization_var_index(name)) {
+        case SER_VAR_FREE:
+            if (model->serialized != NULL)
+                free(model->serialized);
+            model->serialized = NULL;
+            model->serialized_length = 0;
+            return BMI_SUCCESS;
+        case SER_VAR_CREATE:
+            return serialize_topmodel(self);
+        case SER_VAR_STATE:
+            if (deserialize_topmodel(self, (char*)array) == BMI_FAILURE)
+                return BMI_FAILURE;
             if (model->serialized != NULL) {
                 free(model->serialized);
                 model->serialized = NULL;
                 model->serialized_length = 0;
             }
             return BMI_SUCCESS;
-        } else {
+        case SER_VAR_SIZE:
+            // read-only; reports the length set by create
             return BMI_FAILURE;
-        }
     }
 
     if (self->get_value_ptr(self, name, &dest) == BMI_FAILURE)

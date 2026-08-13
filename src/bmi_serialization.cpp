@@ -1,6 +1,7 @@
 extern "C" {
 #include "../include/topmodel.h"
 }
+#include <cstdint>
 #include <cstdio>
 #include "../include/bmi_serialization.h"
 
@@ -129,7 +130,7 @@ const int serialize_topmodel(Bmi* bmi) {
     }
     // set size and allocate memory
     uint64_t serialized_size = stream.size();
-    model->serialized_length = serialized_size + sizeof(uint64_t);
+    model->serialized_length = (int)(serialized_size + sizeof(uint64_t));
     model->serialized = (char*)malloc(model->serialized_length);
     // make sure memory could be allocated
     if (model->serialized == NULL) {
