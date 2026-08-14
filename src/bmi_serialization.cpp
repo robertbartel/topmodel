@@ -6,6 +6,7 @@ extern "C" {
 #include "../include/bmi_serialization.h"
 
 #include <stdexcept>
+#include <vector>
 
 #include <boost/serialization/serialization.hpp>
 #include <boost/archive/binary_iarchive.hpp>
@@ -32,6 +33,35 @@ class TopmodelSerializer {
 #define TOPMODEL_SERIALIZATION_LAYOUT_VERSION 1
 BOOST_CLASS_VERSION(TopmodelSerializer, TOPMODEL_SERIALIZATION_LAYOUT_VERSION)
 
+/*
+ * Archive a field in both directions, applying an incoming value only when it
+ * belongs to the run doing the restoring.  The value is always written and always
+ * read, so the byte layout does not depend on what is applied.
+ */
+template<class Archive, class T>
+static void archive_field(Archive& ar, T& value, bool apply) {
+    if (Archive::is_saving::value) {
+        ar & value;
+    } else {
+        T incoming;
+        ar & incoming;
+        if (apply)
+            value = incoming;
+    }
+}
+
+template<class Archive>
+static void archive_array_field(Archive& ar, double* values, int count, bool apply) {
+    if (Archive::is_saving::value) {
+        ar & boost::serialization::make_array(values, count);
+    } else {
+        std::vector<double> incoming(count);
+        ar & boost::serialization::make_array(incoming.data(), count);
+        if (apply)
+            memcpy(values, incoming.data(), (size_t)count * sizeof(double));
+    }
+}
+
 
 template<class Archive>
 void TopmodelSerializer::serialize(Archive& ar, const unsigned int version) {
@@ -50,14 +80,18 @@ void TopmodelSerializer::serialize(Archive& ar, const unsigned int version) {
         fprintf(stderr, "%s\n", error);
         throw std::runtime_error(error);
     }
-    ar & model->current_time_step;
+    // The clock and the totals below describe the run that wrote the snapshot,
+    // so they carry over only when this run is continuing it.
+    const bool resume = model->restore_mode == TOPMODEL_RESTORE_RESUME;
+
+    archive_field(ar, model->current_time_step, resume);
 
     // data summed between runs
-    ar & model->sump; //
-    ar & model->sumae; //
-    ar & model->sumq; //
-    ar & model->sumrz; // reassigned each update; not used for calcs
-    ar & model->sumuz; // reassigned each update; not used for calcs
+    archive_field(ar, model->sump, resume);
+    archive_field(ar, model->sumae, resume);
+    archive_field(ar, model->sumq, resume);
+    archive_field(ar, model->sumrz, resume); // reassigned each update; not used for calcs
+    archive_field(ar, model->sumuz, resume); // reassigned each update; not used for calcs
 
     // outputs of Update
     ar & model->Qout; // reassigned each update; not used for calcs
@@ -86,30 +120,30 @@ void TopmodelSerializer::serialize(Archive& ar, const unsigned int version) {
         model->contrib_area, model->nstep + 1
     );
 
-    // copy the current sizes to detect changes, then archive the model value
+    // Channel routing counts come from config, so this run's own values stand.
+    // A snapshot that disagrees describes a different catchment setup and is
+    // refused rather than resized into.
     int num_time_delay_histo_ords = model->num_time_delay_histo_ords;
-    ar & model->num_time_delay_histo_ords;
+    ar & num_time_delay_histo_ords;
     int num_delay = model->num_delay;
-    ar & model->num_delay;
-    size_t num_Q = model->num_delay + model->num_time_delay_histo_ords + 1;
-    if (Archive::is_loading::value) {
-        // if loading and array size has changed, reallocate
-        if (num_time_delay_histo_ords != model->num_time_delay_histo_ords) {
-            if (model->time_delay_histogram != NULL)
-                free(model->time_delay_histogram);
-            model->time_delay_histogram = (double *)malloc(
-                (model->num_time_delay_histo_ords + 1) * sizeof(double)
-            );
-        }
-        if (num_delay != model->num_delay || num_time_delay_histo_ords != model->num_time_delay_histo_ords) {
-            if (model->Q != NULL)
-                free(model->Q);
-            model->Q = (double *)malloc(num_Q * sizeof(double));
-        }
+    ar & num_delay;
+    if (Archive::is_loading::value
+        && (num_time_delay_histo_ords != model->num_time_delay_histo_ords
+            || num_delay != model->num_delay)) {
+        char error[160];
+        snprintf(error, sizeof(error),
+                 "state has %d histogram ordinates and %d delay steps, but this "
+                 "configuration has %d and %d",
+                 num_time_delay_histo_ords, num_delay,
+                 model->num_time_delay_histo_ords, model->num_delay);
+        throw std::runtime_error(error);
     }
-    ar & boost::serialization::make_array(
-        model->time_delay_histogram, model->num_time_delay_histo_ords + 1
-    );
+
+    // The weights come from config too, and the counts matching does not mean the
+    // weights do, so this run's own stand under either mode.
+    archive_array_field(ar, model->time_delay_histogram, model->num_time_delay_histo_ords + 1, false);
+
+    size_t num_Q = model->num_delay + model->num_time_delay_histo_ords + 1;
     ar & boost::serialization::make_array(model->Q, num_Q);
 }
 

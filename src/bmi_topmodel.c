@@ -1364,6 +1364,9 @@ topmodel_model * new_bmi_topmodel()  //(void)?
     data->dist_from_outlet = NULL;     // distance from outlet to point on channel with area known
     data->serialized = NULL;           // empty serialized state
     data->serialized_length = 0;
+    // TODO: only a hotstart restore is driven at present; when a resume is also
+    // driven, this needs to become selectable by the caller
+    data->restore_mode = TOPMODEL_RESTORE_HOTSTART;
     return data;
 }
 

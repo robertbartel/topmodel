@@ -89,6 +89,16 @@ extern void d_alloc(double **var,int size);
 extern void i_alloc(int **var,int size);
 
 
+/*** Serialized state restore behavior ***/
+
+/* How much of a snapshot applies to the run restoring it.  A hotstart begins a
+   new simulation from the physical state alone; a resume continues the run that
+   wrote the snapshot, and so also takes its clock and accumulated totals. */
+typedef enum {
+    TOPMODEL_RESTORE_HOTSTART = 0,
+    TOPMODEL_RESTORE_RESUME
+} topmodel_restore_mode;
+
 /*** Model structure ***/
 
 // Changed: "struct topmodel_model{" to "struct TopModel_Struct{"
@@ -191,6 +201,7 @@ struct TopModel_Struct{
   /************** Model State **************/
   char* serialized;      /* serialized state buffer; NULL when none held */
   int serialized_length; /* bytes in serialized; int because GetValue hands out its address */
+  topmodel_restore_mode restore_mode; /* how much of a snapshot to apply */
 
 };
 
