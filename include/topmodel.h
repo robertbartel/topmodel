@@ -91,9 +91,11 @@ extern void i_alloc(int **var,int size);
 
 /*** Serialized state restore behavior ***/
 
-/* How much of a snapshot applies to the run restoring it.  A hotstart begins a
-   new simulation from the physical state alone; a resume continues the run that
-   wrote the snapshot, and so also takes its clock and accumulated totals. */
+/* How much of a snapshot applies to the run restoring it.  Both modes take every
+   archived value and differ only in the clock, which carries over on a resume but
+   not on a hotstart.
+   TODO: which of the rest genuinely belongs to a new simulation is not yet
+   established; until it is, all of it is applied under either mode. */
 typedef enum {
     TOPMODEL_RESTORE_HOTSTART = 0,
     TOPMODEL_RESTORE_RESUME
