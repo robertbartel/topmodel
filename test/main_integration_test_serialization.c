@@ -2,11 +2,10 @@
  * Long-run restart equivalence for the ngen BMI serialization protocol.
  *
  * Runs the same forcing sequence three ways -- straight through, with one
- * checkpoint/restart, and with three.  Instantaneous outputs must match exactly at
- * every step; the run integrals restart at each boundary and are checked against
- * the reference's increment since then.  Each restart goes through a file and a
- * brand new BMI instance, with the previous one finalized and freed first, so
- * state left dangling in the old instance shows up rather than being read by luck.
+ * checkpoint/restart, and with three -- and requires every output variable to
+ * match exactly at every step.  Each restart goes through a file and a brand new
+ * BMI instance, with the previous one finalized and freed first, so state left
+ * dangling in the old instance shows up rather than being read by luck.
  *
  * Note what the current fixture cannot reach.  It resolves to num_delay 0 and
  * num_time_delay_histo_ords 1, so Q holds two elements either way and
@@ -21,7 +20,6 @@
  */
 
 #include <assert.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,45 +164,16 @@ static void run(const int *restart_after, int n_restarts, double *results) {
     destroy_model(model);
 }
 
-/* TODO: hotstart is the only restore supported at present; a full resume,
-   continuing the same simulation, would carry these across a restart too. */
-static int is_run_integral(const char *name) {
-    return strstr(name, "domain_time_integral_of_precipitation") != NULL
-        || strstr(name, "domain_time_integral_of_evaporation") != NULL
-        || strstr(name, "domain_time_integral_of_runoff") != NULL;
-}
-
-/* Instantaneous outputs must match exactly.  The run integrals restart at each
-   boundary, so they are checked against the reference's increment since that
-   boundary; summing a tail is not bit-identical to differencing two totals, hence
-   the tolerance. */
-static void compare(const char *label, const double *reference, const double *actual,
-                    const int *restart_after, int n_restarts) {
-    int baseline = -1;
-    int next = 0;
+static void compare(const char *label, const double *reference, const double *actual) {
     for (int step = 0; step < n_steps; step++) {
         for (int v = 0; v < n_out; v++) {
             int i = step * n_out + v;
-            if (is_run_integral(out_names[v])) {
-                double base = baseline < 0 ? 0.0 : reference[baseline * n_out + v];
-                double expected = reference[i] - base;
-                double scale = fabs(expected) > 1.0 ? fabs(expected) : 1.0;
-                if (fabs(actual[i] - expected) > 1e-9 * scale) {
-                    printf("   FAIL: %s diverges at step %d, %s: %.17g vs %.17g since the restart\n",
-                           label, step, out_names[v], actual[i], expected);
-                    failures++;
-                    return;
-                }
-            } else if (reference[i] != actual[i]) {
+            if (reference[i] != actual[i]) {
                 printf("   FAIL: %s diverges at step %d, %s: %.17g vs %.17g\n",
                        label, step, out_names[v], actual[i], reference[i]);
                 failures++;
                 return;
             }
-        }
-        if (next < n_restarts && step == restart_after[next]) {
-            baseline = step;
-            next++;
         }
     }
     printf("   %s matches the straight run over %d steps and %d variables\n",
@@ -240,11 +209,11 @@ int main(void) {
 
     printf("\n[2] One restart, after step %d\n", one[0]);
     run(one, 1, one_restart);
-    compare("one restart", straight, one_restart, one, 1);
+    compare("one restart", straight, one_restart);
 
     printf("\n[3] Three restarts, after steps %d, %d and %d\n", three[0], three[1], three[2]);
     run(three, 3, three_restarts);
-    compare("three restarts", straight, three_restarts, three, 3);
+    compare("three restarts", straight, three_restarts);
 
     remove(CHECKPOINT_FILE);
     free(straight);

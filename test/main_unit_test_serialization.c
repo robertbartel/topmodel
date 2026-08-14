@@ -198,11 +198,10 @@ static void test_spatial_calls_decline(Bmi *model) {
     printf("   all four decline both calls\n");
 }
 
-/* TODO: hotstart is the only restore supported at present; a full resume,
-   continuing the same simulation, will need its own coverage here. */
-
-/* A restore is a hotstart: physical state carries over, while the clock and the
-   run integrals stay with the run that is doing the restoring. */
+/* TODO: hotstart is the only restore driven at present; a full resume,
+   continuing the same simulation, will need its own coverage here.
+   A restore applies every archived value except the clock, which stays with the
+   run doing the restoring. */
 static void test_round_trip(void) {
     printf("\n[6] Save, diverge, restore\n");
     Bmi *model = make_model();
@@ -210,7 +209,7 @@ static void test_round_trip(void) {
 
     topmodel_model *m = (topmodel_model *)model->data;
     int saved_step = m->current_time_step;
-    double saved_sbar = m->sbar, saved_sumq = m->sumq;
+    double saved_sbar = m->sbar, saved_sumq = m->sumq, saved_sump = m->sump;
     double saved_deficit = m->deficit_local[0];
 
     char *payload = NULL;
@@ -225,20 +224,19 @@ static void test_round_trip(void) {
     step(model, 3);
     CHECK(m->current_time_step != saved_step, "model did not advance after capture");
     int diverged_step = m->current_time_step;
-    double diverged_sumq = m->sumq, diverged_sump = m->sump;
 
     CHECK(model->set_value(model, "ngen::serialization_state", payload) == BMI_SUCCESS,
           "restore failed");
 
     CHECK(m->sbar == saved_sbar, "sbar = %g, expected %g", m->sbar, saved_sbar);
+    CHECK(m->sumq == saved_sumq, "sumq = %g, expected %g", m->sumq, saved_sumq);
+    CHECK(m->sump == saved_sump, "sump = %g, expected %g", m->sump, saved_sump);
     CHECK(m->deficit_local[0] == saved_deficit,
           "deficit_local[0] = %g, expected %g", m->deficit_local[0], saved_deficit);
 
     CHECK(m->current_time_step == diverged_step,
           "restore moved the clock to %d; a hotstart keeps its own", m->current_time_step);
-    CHECK(m->sumq == diverged_sumq && m->sump == diverged_sump,
-          "restore replaced the run integrals; a hotstart keeps its own");
-    printf("   physical state restored, clock left at step %d\n", m->current_time_step);
+    printf("   state restored, clock left at step %d\n", m->current_time_step);
 
     free(payload);
     destroy_model(model);
@@ -249,7 +247,7 @@ static void test_restore_matches_uninterrupted(void) {
     Bmi *reference = make_model();
     step(reference, 7);
     topmodel_model *r = (topmodel_model *)reference->data;
-    double ref_sbar = r->sbar, ref_Qout = r->Qout;
+    double ref_sbar = r->sbar, ref_sumq = r->sumq, ref_Qout = r->Qout;
 
     Bmi *interrupted = make_model();
     step(interrupted, 4);
@@ -266,12 +264,11 @@ static void test_restore_matches_uninterrupted(void) {
           "restore failed");
     step_range(interrupted, 4, 7);
 
-    // TODO: hotstart is the only restore supported at present; a full resume,
-    // continuing the same simulation, will need its own coverage here.
     topmodel_model *n = (topmodel_model *)interrupted->data;
     CHECK(n->sbar == ref_sbar, "sbar = %g, uninterrupted gave %g", n->sbar, ref_sbar);
+    CHECK(n->sumq == ref_sumq, "sumq = %g, uninterrupted gave %g", n->sumq, ref_sumq);
     CHECK(n->Qout == ref_Qout, "Qout = %g, uninterrupted gave %g", n->Qout, ref_Qout);
-    printf("   sbar=%g Qout=%g in both runs\n", n->sbar, n->Qout);
+    printf("   sbar=%g sumq=%g Qout=%g in both runs\n", n->sbar, n->sumq, n->Qout);
 
     free(payload);
     destroy_model(reference);
@@ -358,16 +355,16 @@ static void test_rejects_bad_payloads(void) {
     destroy_model(model);
 }
 
-/* The mode is fixed at hotstart today, so this covers the other branch of the
-   restore and keeps it from quietly becoming dead code. */
-static void test_resume_mode_applies_run_state(void) {
-    printf("\n[10] Resume mode applies the clock and run integrals\n");
+/* The clock is the only field the mode discriminates, and the mode is fixed at
+   hotstart today, so this covers the other branch and keeps it from quietly
+   becoming dead code. */
+static void test_resume_mode_applies_the_clock(void) {
+    printf("\n[10] Resume mode takes the clock from the snapshot\n");
     Bmi *model = make_model();
     step(model, 4);
 
     topmodel_model *m = (topmodel_model *)model->data;
     int saved_step = m->current_time_step;
-    double saved_sumq = m->sumq;
 
     char *payload = NULL;
     int payload_size = 0;
@@ -383,8 +380,7 @@ static void test_resume_mode_applies_run_state(void) {
           "restore failed");
     CHECK(m->current_time_step == saved_step,
           "current_time_step = %d, expected the snapshot's %d", m->current_time_step, saved_step);
-    CHECK(m->sumq == saved_sumq, "sumq = %g, expected the snapshot's %g", m->sumq, saved_sumq);
-    printf("   clock and integrals taken from the snapshot at step %d\n", m->current_time_step);
+    printf("   clock taken from the snapshot at step %d\n", m->current_time_step);
 
     free(payload);
     destroy_model(model);
@@ -411,7 +407,7 @@ int main(void) {
     test_restore_matches_uninterrupted();
     test_free_is_safe();
     test_rejects_bad_payloads();
-    test_resume_mode_applies_run_state();
+    test_resume_mode_applies_the_clock();
 
     printf("\n***************************************\n");
     if (failures == 0) {
