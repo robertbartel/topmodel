@@ -102,6 +102,18 @@ if (TESTS_WITH_ASAN)
 endif ()
 ####################
 
+####################
+# Stuff for long-run restart equivalence tests; run separately from the others
+add_executable(serialization_integration_tests test/main_integration_test_serialization.c src/bmi_topmodel.c src/topmodel.c src/bmi_serialization.cpp)
+target_compile_definitions(serialization_integration_tests PRIVATE REPO_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(serialization_integration_tests PRIVATE include)
+target_link_libraries(serialization_integration_tests m Boost::serialization)
+if (TESTS_WITH_ASAN)
+    target_compile_options(serialization_integration_tests PRIVATE -fsanitize=address)
+    target_link_options(serialization_integration_tests PRIVATE -fsanitize=address)
+endif ()
+####################
+
 include(GNUInstallDirs)
 
 install(TARGETS topmodelbmi
