@@ -141,7 +141,7 @@ extern "C" {
 /**
  * Serializes a Topmodel BMI model through boost. Formats the data as binary output for smaller memory impact than text.
  * It is the responsibility of the caller to free the newly allocated memory if BMI_SUCCESS is returned.
- * 
+ *
  * @param bmi topmodel BMI model that will be serialized
  * @param buffer Pointer to a char pointer. The pointer's pointer will be assigned to the serialized data.
  * @param size_written Pointer to the amount of data that was written to the buffer.
@@ -165,8 +165,7 @@ const int serialize_topmodel(Bmi* bmi) {
         free(model->serialized);
     }
     // set size and allocate memory
-    uint64_t serialized_size = stream.size();
-    model->serialized_length = (int)(serialized_size + sizeof(uint64_t));
+    model->serialized_length = (int64_t)stream.size();
     model->serialized = (char*)malloc(model->serialized_length);
     // make sure memory could be allocated
     if (model->serialized == NULL) {
@@ -174,25 +173,21 @@ const int serialize_topmodel(Bmi* bmi) {
         return BMI_FAILURE;
     }
     // copy stream data to new allocation
-    memcpy(model->serialized, &serialized_size, sizeof(uint64_t));
-    memcpy(model->serialized + sizeof(uint64_t), stream.data(), serialized_size);
+    memcpy(model->serialized, stream.data(), model->serialized_length);
     return BMI_SUCCESS;
 }
 
  /**
   * Deserializes data into a Topmodel BMI model.
-  * 
+  *
   * @param bmi Topmodel BMI model that will have values inserted into it.
   * @param buffer Start of data that wil be read as previously serialized state
+  * @param size Bytes of serialized state in buffer
   * @return int signifiying whether the serialization process completed successfully.
   */
-const int deserialize_topmodel(Bmi* bmi, char* buffer) {
+const int deserialize_topmodel(Bmi* bmi, char* buffer, int64_t size) {
     TopmodelSerializer serializer(bmi);
-    // copy size of data out of header
-    uint64_t size;
-    memcpy(&size, buffer, sizeof(uint64_t));
-    // create stream from data after header
-    membuf stream(buffer + sizeof(uint64_t), size);
+    membuf stream(buffer, size);
     try {
         // Constructing the archive validates the header, so it belongs inside the
         // try; otherwise a foreign or corrupt payload escapes as an exception

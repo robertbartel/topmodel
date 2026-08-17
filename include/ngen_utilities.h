@@ -10,7 +10,7 @@
  * support probe is GetVarUnits alone, compared exactly against the units below.
  *
  * Save:    SetValue(create) -> GetValue(size) -> GetValue(state) -> SetValue(free)
- * Restore: SetValue(state, payload)
+ * Restore: SetValue(size, bytes) -> SetValue(state, payload)
  */
 
 #include <string.h>
@@ -35,7 +35,7 @@ static const char *serialization_var_names[SER_VAR_COUNT] = {
 };
 
 static const char *serialization_var_types[SER_VAR_COUNT] = {
-    "int", "int", "int", "char"
+    "int", "int", "int64", "char"
 };
 
 static const char *serialization_var_units[SER_VAR_COUNT] = {
