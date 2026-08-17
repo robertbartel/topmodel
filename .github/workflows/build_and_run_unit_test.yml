@@ -68,6 +68,16 @@ jobs:
         cd cmake_build/
         ./simple_unit_tests
 
+    - name: Build and Run Serialization Tests
+      run: |
+        cmake -B cmake_build -DCMAKE_C_FLAGS="-g -Og -fsanitize=address -Werror" -DCMAKE_CXX_FLAGS="-g -Og -fsanitize=address -Werror" -S .
+        cmake --build cmake_build --target clean
+        cmake --build cmake_build --target serialization_unit_tests
+        cmake --build cmake_build --target serialization_integration_tests
+        cd cmake_build/
+        ./serialization_unit_tests
+        ./serialization_integration_tests
+
     - name: Build and Run Standalone
       run: |
         cmake -B cmake_build -DCMAKE_C_FLAGS="-g -Og -fsanitize=address -Werror" -DCMAKE_CXX_FLAGS="-g -Og -fsanitize=address -Werror" -S .
