@@ -453,6 +453,41 @@ static void test_state_without_size_fails(void) {
     destroy_model(model);
 }
 
+/* Declaring a size over a held capture would leave the length past the buffer's end. */
+static void test_declared_size_refused_over_a_capture(void) {
+    printf("\n[14] A size declared over a held capture is refused\n");
+    Bmi *model = make_model();
+    step(model, 4);
+
+    int trigger = 0;
+    CHECK(model->set_value(model, "ngen::serialization_create", &trigger) == BMI_SUCCESS,
+          "create failed");
+
+    int64_t captured = -1;
+    model->get_value(model, "ngen::serialization_size", &captured);
+
+    int64_t declared = captured + 100000;
+    CHECK(model->set_value(model, "ngen::serialization_size", &declared) == BMI_FAILURE,
+          "a size was accepted while a capture was held");
+
+    int64_t reported = -1;
+    model->get_value(model, "ngen::serialization_size", &reported);
+    CHECK(reported == captured, "size = %lld after a refused %lld, expected %lld",
+          (long long)reported, (long long)declared, (long long)captured);
+
+    /* exactly the capture's length, so an overread faults rather than going unnoticed */
+    char *buffer = (char *)malloc((size_t)captured);
+    assert(buffer != NULL);
+    CHECK(model->get_value(model, "ngen::serialization_state", buffer) == BMI_SUCCESS,
+          "state unreadable after a refused size");
+    printf("   %lld refused, capture still reads %lld\n",
+           (long long)declared, (long long)captured);
+
+    free(buffer);
+    model->set_value(model, "ngen::serialization_free", &trigger);
+    destroy_model(model);
+}
+
 int main(void) {
 #ifndef REPO_ROOT_DIR
     printf("Please set REPO_ROOT_DIR build macro and rebuild test executable\n");
@@ -478,6 +513,7 @@ int main(void) {
     test_size_is_settable();
     test_nbytes_reflects_set_size();
     test_state_without_size_fails();
+    test_declared_size_refused_over_a_capture();
 
     printf("\n***************************************\n");
     if (failures == 0) {

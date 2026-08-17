@@ -1012,6 +1012,13 @@ static int Set_value (Bmi *self, const char *name, void *array)
             return BMI_SUCCESS;
         case SER_VAR_CREATE:
             return serialize_topmodel(self);
+        case SER_VAR_SIZE:
+            // while a capture is held the length is the buffer's own, so overwriting it
+            // would leave a later read running off the end
+            if (model->serialized != NULL)
+                return BMI_FAILURE;
+            memcpy(&model->serialized_length, array, sizeof(model->serialized_length));
+            return BMI_SUCCESS;
         case SER_VAR_STATE:
             // the payload carries no length, so a size must have been declared first
             if (model->serialized_length <= 0)
@@ -1024,7 +1031,6 @@ static int Set_value (Bmi *self, const char *name, void *array)
                 model->serialized = NULL;
             }
             return BMI_SUCCESS;
-        // size is assigned like any other value
     }
 
     if (self->get_value_ptr(self, name, &dest) == BMI_FAILURE)
