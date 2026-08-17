@@ -20,6 +20,7 @@
  */
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,13 +98,14 @@ static void load_output_names(void) {
 
 /* Capture through the engine's sequence and write the payload to a file. */
 static void checkpoint(Bmi *model) {
-    int trigger = 0, size = -1;
+    int trigger = 0;
+    int64_t size = -1;
     if (model->set_value(model, "ngen::serialization_create", &trigger) != BMI_SUCCESS) {
         printf("   FAIL: create failed\n");
         exit(BMI_FAILURE);
     }
     if (model->get_value(model, "ngen::serialization_size", &size) != BMI_SUCCESS || size <= 0) {
-        printf("   FAIL: size read back as %d\n", size);
+        printf("   FAIL: size read back as %lld\n", (long long)size);
         exit(BMI_FAILURE);
     }
     char *payload = (char *)malloc((size_t)size);
@@ -125,7 +127,7 @@ static void restore(Bmi *model) {
     FILE *f = fopen(CHECKPOINT_FILE, "rb");
     assert(f != NULL);
     fseek(f, 0, SEEK_END);
-    long size = ftell(f);
+    int64_t size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *payload = (char *)malloc((size_t)size);
     assert(payload != NULL);
@@ -133,7 +135,8 @@ static void restore(Bmi *model) {
     fclose(f);
     assert(got == (size_t)size);
 
-    if (model->set_value(model, "ngen::serialization_state", payload) != BMI_SUCCESS) {
+    if (model->set_value(model, "ngen::serialization_size", &size) != BMI_SUCCESS ||
+        model->set_value(model, "ngen::serialization_state", payload) != BMI_SUCCESS) {
         printf("   FAIL: restore failed\n");
         exit(BMI_FAILURE);
     }

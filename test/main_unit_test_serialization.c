@@ -10,6 +10,7 @@
  */
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,9 +40,9 @@ static const char *reserved_names[4] = {
 static const char *reserved_units[4] = {
     "ngen::trigger", "ngen::trigger", "bytes", "ngen::opaque"
 };
-static const char *reserved_types[4] = {"int", "int", "int", "char"};
+static const char *reserved_types[4] = {"int", "int", "int64", "char"};
 static const int reserved_itemsizes[4] = {
-    (int)sizeof(int), (int)sizeof(int), (int)sizeof(int), (int)sizeof(char)
+    (int)sizeof(int), (int)sizeof(int), (int)sizeof(int64_t), (int)sizeof(char)
 };
 
 static Bmi *make_model(void) {
@@ -77,12 +78,12 @@ static void step_range(Bmi *model, int from, int to) {
 static void step(Bmi *model, int steps) { step_range(model, 0, steps); }
 
 /* Capture through the sequence the engine drives.  Caller frees *out. */
-static int capture(Bmi *model, char **out, int *out_size) {
+static int capture(Bmi *model, char **out, int64_t *out_size) {
     int trigger = 0;
     if (model->set_value(model, "ngen::serialization_create", &trigger) != BMI_SUCCESS)
         return BMI_FAILURE;
 
-    int size = -1;
+    int64_t size = -1;
     if (model->get_value(model, "ngen::serialization_size", &size) != BMI_SUCCESS)
         return BMI_FAILURE;
     if (size <= 0)
@@ -102,6 +103,13 @@ static int capture(Bmi *model, char **out, int *out_size) {
     *out = buffer;
     *out_size = size;
     return BMI_SUCCESS;
+}
+
+/* Restore through the sequence the engine drives: the byte count, then the bytes */
+static int restore(Bmi *model, char *payload, int64_t size) {
+    if (model->set_value(model, "ngen::serialization_size", &size) != BMI_SUCCESS)
+        return BMI_FAILURE;
+    return model->set_value(model, "ngen::serialization_state", payload);
 }
 
 static void test_units_probe(Bmi *model) {
@@ -213,10 +221,10 @@ static void test_round_trip(void) {
     double saved_deficit = m->deficit_local[0];
 
     char *payload = NULL;
-    int payload_size = 0;
+    int64_t payload_size = 0;
     CHECK(capture(model, &payload, &payload_size) == BMI_SUCCESS, "capture failed");
     if (payload == NULL) { destroy_model(model); return; }
-    printf("   captured %d bytes at step %d\n", payload_size, saved_step);
+    printf("   captured %lld bytes at step %d\n", (long long)payload_size, saved_step);
 
     CHECK(m->current_time_step == saved_step && m->sbar == saved_sbar && m->sumq == saved_sumq,
           "create/free altered computed state");
@@ -225,8 +233,7 @@ static void test_round_trip(void) {
     CHECK(m->current_time_step != saved_step, "model did not advance after capture");
     int diverged_step = m->current_time_step;
 
-    CHECK(model->set_value(model, "ngen::serialization_state", payload) == BMI_SUCCESS,
-          "restore failed");
+    CHECK(restore(model, payload, payload_size) == BMI_SUCCESS, "restore failed");
 
     CHECK(m->sbar == saved_sbar, "sbar = %g, expected %g", m->sbar, saved_sbar);
     CHECK(m->sumq == saved_sumq, "sumq = %g, expected %g", m->sumq, saved_sumq);
@@ -252,7 +259,7 @@ static void test_restore_matches_uninterrupted(void) {
     Bmi *interrupted = make_model();
     step(interrupted, 4);
     char *payload = NULL;
-    int payload_size = 0;
+    int64_t payload_size = 0;
     if (capture(interrupted, &payload, &payload_size) != BMI_SUCCESS) {
         CHECK(0, "capture failed");
         destroy_model(reference);
@@ -260,8 +267,7 @@ static void test_restore_matches_uninterrupted(void) {
         return;
     }
     step(interrupted, 3);
-    CHECK(interrupted->set_value(interrupted, "ngen::serialization_state", payload) == BMI_SUCCESS,
-          "restore failed");
+    CHECK(restore(interrupted, payload, payload_size) == BMI_SUCCESS, "restore failed");
     step_range(interrupted, 4, 7);
 
     topmodel_model *n = (topmodel_model *)interrupted->data;
@@ -290,18 +296,18 @@ static void test_free_is_safe(void) {
     CHECK(model->set_value(model, "ngen::serialization_free", &trigger) == BMI_SUCCESS,
           "second free failed");
 
-    int size = -1;
+    int64_t size = -1;
     CHECK(model->get_value(model, "ngen::serialization_size", &size) == BMI_SUCCESS,
           "size unreadable after free");
-    CHECK(size == 0, "size = %d after free, expected 0", size);
-    printf("   free before create and twice in a row both leave size = %d\n", size);
+    CHECK(size == 0, "size = %lld after free, expected 0", (long long)size);
+    printf("   free before create and twice in a row both leave size = %lld\n", (long long)size);
 
     destroy_model(model);
 }
 
 /* Offset of Boost's class version field, located from the archive signature so a
    layout change fails loudly rather than silently testing nothing. */
-static int layout_version_offset(const char *payload, int size) {
+static int layout_version_offset(const char *payload, int64_t size) {
     static const char sig[] = "serialization::archive";
     for (int i = 0; i + (int)sizeof(sig) < size; i++) {
         if (memcmp(payload + i, sig, sizeof(sig) - 1) == 0)
@@ -316,7 +322,7 @@ static void test_rejects_bad_payloads(void) {
     step(model, 4);
 
     char *payload = NULL;
-    int payload_size = 0;
+    int64_t payload_size = 0;
     if (capture(model, &payload, &payload_size) != BMI_SUCCESS) {
         CHECK(0, "capture failed");
         destroy_model(model);
@@ -333,7 +339,7 @@ static void test_rejects_bad_payloads(void) {
 
     memcpy(corrupt, payload, (size_t)payload_size);
     corrupt[sig_at - 20] = (char)(corrupt[sig_at - 20] + 1);
-    CHECK(model->set_value(model, "ngen::serialization_state", corrupt) == BMI_FAILURE,
+    CHECK(restore(model, corrupt, payload_size) == BMI_FAILURE,
           "a payload with a corrupted signature was accepted");
     CHECK(m->sbar == sbar_before, "a rejected payload altered model state");
 
@@ -343,7 +349,7 @@ static void test_rejects_bad_payloads(void) {
               sig_at, (int)payload[sig_at]);
         memcpy(corrupt, payload, (size_t)payload_size);
         corrupt[sig_at] = (char)(corrupt[sig_at] + 1);
-        CHECK(model->set_value(model, "ngen::serialization_state", corrupt) == BMI_FAILURE,
+        CHECK(restore(model, corrupt, payload_size) == BMI_FAILURE,
               "a payload with an unknown layout version was accepted");
         CHECK(m->sbar == sbar_before, "a rejected payload altered model state");
     }
@@ -367,7 +373,7 @@ static void test_resume_mode_applies_the_clock(void) {
     int saved_step = m->current_time_step;
 
     char *payload = NULL;
-    int payload_size = 0;
+    int64_t payload_size = 0;
     if (capture(model, &payload, &payload_size) != BMI_SUCCESS) {
         CHECK(0, "capture failed");
         destroy_model(model);
@@ -376,11 +382,72 @@ static void test_resume_mode_applies_the_clock(void) {
     step(model, 3);
 
     m->restore_mode = TOPMODEL_RESTORE_RESUME;
-    CHECK(model->set_value(model, "ngen::serialization_state", payload) == BMI_SUCCESS,
-          "restore failed");
+    CHECK(restore(model, payload, payload_size) == BMI_SUCCESS, "restore failed");
     CHECK(m->current_time_step == saved_step,
           "current_time_step = %d, expected the snapshot's %d", m->current_time_step, saved_step);
     printf("   clock taken from the snapshot at step %d\n", m->current_time_step);
+
+    free(payload);
+    destroy_model(model);
+}
+
+static void test_size_is_settable(void) {
+    printf("\n[11] Size can be set, and reads back\n");
+    Bmi *model = make_model();
+
+    int64_t declared = 4096;
+    CHECK(model->set_value(model, "ngen::serialization_size", &declared) == BMI_SUCCESS,
+          "size is not settable; a restore cannot declare its byte count");
+
+    int64_t reported = -1;
+    CHECK(model->get_value(model, "ngen::serialization_size", &reported) == BMI_SUCCESS,
+          "size unreadable after being set");
+    CHECK(reported == declared, "size = %lld, expected %lld",
+          (long long)reported, (long long)declared);
+    printf("   set %lld, read back %lld\n", (long long)declared, (long long)reported);
+
+    destroy_model(model);
+}
+
+static void test_nbytes_reflects_set_size(void) {
+    printf("\n[12] GetVarNbytes(state) reports a declared size\n");
+    Bmi *model = make_model();
+
+    int64_t declared = 4096;
+    CHECK(model->set_value(model, "ngen::serialization_size", &declared) == BMI_SUCCESS,
+          "size is not settable");
+
+    int nbytes = -1;
+    CHECK(model->get_var_nbytes(model, "ngen::serialization_state", &nbytes) == BMI_SUCCESS,
+          "get_var_nbytes(state) failed");
+    CHECK(nbytes == (int)declared, "nbytes = %d, expected %lld",
+          nbytes, (long long)declared);
+    printf("   nbytes = %d with %lld declared\n", nbytes, (long long)declared);
+
+    destroy_model(model);
+}
+
+/* The payload carries no length of its own, so undeclared bytes are unreadable. */
+static void test_state_without_size_fails(void) {
+    printf("\n[13] State with no declared size is rejected\n");
+    Bmi *model = make_model();
+    step(model, 4);
+
+    char *payload = NULL;
+    int64_t payload_size = 0;
+    if (capture(model, &payload, &payload_size) != BMI_SUCCESS) {
+        CHECK(0, "capture failed");
+        destroy_model(model);
+        return;
+    }
+
+    /* capture ends on free, which clears the size along with the buffer */
+    topmodel_model *m = (topmodel_model *)model->data;
+    double sbar_before = m->sbar;
+    CHECK(model->set_value(model, "ngen::serialization_state", payload) == BMI_FAILURE,
+          "state was accepted with no size declared");
+    CHECK(m->sbar == sbar_before, "a rejected payload altered model state");
+    printf("   %lld bytes turned away with no size declared\n", (long long)payload_size);
 
     free(payload);
     destroy_model(model);
@@ -408,6 +475,9 @@ int main(void) {
     test_free_is_safe();
     test_rejects_bad_payloads();
     test_resume_mode_applies_the_clock();
+    test_size_is_settable();
+    test_nbytes_reflects_set_size();
+    test_state_without_size_fails();
 
     printf("\n***************************************\n");
     if (failures == 0) {

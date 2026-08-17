@@ -1,6 +1,7 @@
 #ifndef TOPMODEL_H
 #define TOPMODEL_H
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
@@ -201,8 +202,8 @@ struct TopModel_Struct{
   //double dbl_arr_test[3];
 
   /************** Model State **************/
-  char* serialized;      /* serialized state buffer; NULL when none held */
-  int serialized_length; /* bytes in serialized; int because GetValue hands out its address */
+  char* serialized;          /* serialized state buffer; NULL when none held */
+  int64_t serialized_length; /* bytes of state; 64 bit as the protocol requires */
   topmodel_restore_mode restore_mode; /* how much of a snapshot to apply */
 
 };

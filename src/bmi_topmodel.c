@@ -652,6 +652,10 @@ static int Get_var_itemsize (Bmi *self, const char *name, int * size)
         *size = sizeof(long);
         return BMI_SUCCESS;
     }
+    else if (strcmp (type, "int64") == 0) {
+        *size = sizeof(int64_t);
+        return BMI_SUCCESS;
+    }
     else if (strcmp (type, "char") == 0) {
         *size = sizeof(char);
         return BMI_SUCCESS;
@@ -721,10 +725,9 @@ static int Get_var_nbytes (Bmi *self, const char *name, int * nbytes)
     int ser_var = serialization_var_index(name);
     if (ser_var >= 0) {
         int ser_count = serialization_var_item_count[ser_var];
-        // A restore precedes the first capture, so report 0 rather than failing
-        // when no state has been created yet
+        // the length a create captured or a restore declared; 0 before either
         if (ser_count == 0)
-            ser_count = ((topmodel_model *) self->data)->serialized_length;
+            ser_count = (int)((topmodel_model *) self->data)->serialized_length;
         *nbytes = item_size * ser_count;
         return BMI_SUCCESS;
     }
@@ -1010,17 +1013,18 @@ static int Set_value (Bmi *self, const char *name, void *array)
         case SER_VAR_CREATE:
             return serialize_topmodel(self);
         case SER_VAR_STATE:
-            if (deserialize_topmodel(self, (char*)array) == BMI_FAILURE)
+            // the payload carries no length, so a size must have been declared first
+            if (model->serialized_length <= 0)
                 return BMI_FAILURE;
+            if (deserialize_topmodel(self, (char*)array, model->serialized_length) == BMI_FAILURE)
+                return BMI_FAILURE;
+            // the declared length stands; only a buffer left from an earlier save is freed
             if (model->serialized != NULL) {
                 free(model->serialized);
                 model->serialized = NULL;
-                model->serialized_length = 0;
             }
             return BMI_SUCCESS;
-        case SER_VAR_SIZE:
-            // read-only; reports the length set by create
-            return BMI_FAILURE;
+        // size is assigned like any other value
     }
 
     if (self->get_value_ptr(self, name, &dest) == BMI_FAILURE)

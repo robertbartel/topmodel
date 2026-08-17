@@ -5,10 +5,12 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
+
 #include "bmi.h"
 
 const int serialize_topmodel(Bmi* bmi);
-const int deserialize_topmodel(Bmi* bmi, char* buffer);
+const int deserialize_topmodel(Bmi* bmi, char* buffer, int64_t size);
 
 #ifdef __cplusplus
 }
