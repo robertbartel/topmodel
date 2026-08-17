@@ -488,6 +488,31 @@ static void test_declared_size_refused_over_a_capture(void) {
     destroy_model(model);
 }
 
+/* Indexed access does no bounds checking, so a reserved name has to be turned away. */
+static void test_indexed_access_declines(void) {
+    printf("\n[15] GetValueAtIndices and SetValueAtIndices decline\n");
+    Bmi *model = make_model();
+    step(model, 4);
+
+    int trigger = 0;
+    /* with a capture held, state resolves to a real buffer rather than declining outright */
+    CHECK(model->set_value(model, "ngen::serialization_create", &trigger) == BMI_SUCCESS,
+          "create failed");
+
+    int inds[1] = {1};
+    char value[sizeof(int64_t)] = {0};
+    for (int i = 0; i < 4; i++) {
+        CHECK(model->get_value_at_indices(model, reserved_names[i], value, inds, 1) == BMI_FAILURE,
+              "get_value_at_indices(%s) succeeded", reserved_names[i]);
+        CHECK(model->set_value_at_indices(model, reserved_names[i], inds, 1, value) == BMI_FAILURE,
+              "set_value_at_indices(%s) succeeded", reserved_names[i]);
+    }
+    printf("   all four decline both calls with a capture held\n");
+
+    model->set_value(model, "ngen::serialization_free", &trigger);
+    destroy_model(model);
+}
+
 int main(void) {
 #ifndef REPO_ROOT_DIR
     printf("Please set REPO_ROOT_DIR build macro and rebuild test executable\n");
@@ -514,6 +539,7 @@ int main(void) {
     test_nbytes_reflects_set_size();
     test_state_without_size_fails();
     test_declared_size_refused_over_a_capture();
+    test_indexed_access_declines();
 
     printf("\n***************************************\n");
     if (failures == 0) {

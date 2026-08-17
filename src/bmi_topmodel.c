@@ -961,6 +961,10 @@ static int Get_value_at_indices (Bmi *self, const char *name, void *dest, int * 
     void *src = NULL;
     int itemsize = 0;
 
+    // a reserved name is a scalar or an opaque buffer, and the indices below are unchecked
+    if (serialization_var_index(name) >= 0)
+        return BMI_FAILURE;
+
     if (self->get_value_ptr(self, name, &src) == BMI_FAILURE)
         return BMI_FAILURE;
 
@@ -1183,6 +1187,10 @@ static int Set_value_at_indices (Bmi *self, const char *name, int * inds, int le
 {
     void * to = NULL;
     int itemsize = 0;
+
+    // a reserved name is a scalar or an opaque buffer, and the indices below are unchecked
+    if (serialization_var_index(name) >= 0)
+        return BMI_FAILURE;
 
     if (self->get_value_ptr (self, name, &to) == BMI_FAILURE)
         return BMI_FAILURE;
