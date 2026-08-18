@@ -143,8 +143,6 @@ extern "C" {
  * It is the responsibility of the caller to free the newly allocated memory if BMI_SUCCESS is returned.
  *
  * @param bmi topmodel BMI model that will be serialized
- * @param buffer Pointer to a char pointer. The pointer's pointer will be assigned to the serialized data.
- * @param size_written Pointer to the amount of data that was written to the buffer.
  * @return int signifiying whether the serialization process completed successfully.
  */
 const int serialize_topmodel(Bmi* bmi) {
