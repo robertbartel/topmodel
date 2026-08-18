@@ -1,0 +1,38 @@
+name: Build Boost
+description: Build Boost.Serialization and point CMake at it
+
+inputs:
+  version:
+    description: Boost release to build.  Must satisfy the version floor in CMakeLists.txt
+    default: 1.86.0
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Boost
+      id: cache-boost
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/boost-install
+        key: boost-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    # Serialization is a compiled Boost library, and at present the runners' distribution packages predate the
+    # min version, so build it from source.
+    - name: Build Boost.Serialization
+      if: steps.cache-boost.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        cd ${{ runner.temp }}
+        dir="boost_${VERSION//./_}"
+        curl -fsSL -o boost.tar.gz \
+          "https://archives.boost.io/release/${VERSION}/source/${dir}.tar.gz"
+        tar xzf boost.tar.gz
+        cd "$dir"
+        ./bootstrap.sh --with-libraries=serialization --prefix=${{ runner.temp }}/boost-install
+        ./b2 install --with-serialization link=shared -j"$(getconf _NPROCESSORS_ONLN)"
+
+    - name: Point CMake at Boost
+      shell: bash
+      run: echo "CMAKE_PREFIX_PATH=${{ runner.temp }}/boost-install" >> "$GITHUB_ENV"

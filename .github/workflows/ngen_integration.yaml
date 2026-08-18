@@ -16,9 +16,6 @@ env:
   LINUX_NUM_PROC_CORES: 2
   MACOS_NUM_PROC_CORES: 3
   ASAN_OPTIONS: detect_leaks=false
-  # Must satisfy the version floor in CMakeLists.txt
-  BOOST_VERSION: 1.86.0
-  BOOST_VERSION_UNDERSCORE: 1_86_0
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
@@ -36,6 +33,10 @@ jobs:
       # Checkout and save the topmodel to a temporary directory
       - name: Checkout the commit
         uses: actions/checkout@v4
+
+      # Has to be run before ngen checkout below takes over workspace.  Installs outside the workspace, so still works.
+      - name: Build Boost
+        uses: ./.github/actions/build-boost
 
       - name: Save Topmodel to a Temp Directory
         run: |
@@ -103,29 +104,6 @@ jobs:
           bmi_c: 'ON'
           bmi_fortran: 'ON'
         timeout-minutes: 15
-
-      - name: Cache Boost
-        id: cache-boost
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/boost-install
-          key: boost-${{ env.BOOST_VERSION }}-${{ runner.os }}-${{ runner.arch }}
-
-      # Serialization is a compiled Boost library, and the runners' distribution
-      # packages predate the version floor, so build just that one from source.
-      - name: Build Boost.Serialization
-        if: steps.cache-boost.outputs.cache-hit != 'true'
-        run: |
-          cd ${{ runner.temp }}
-          curl -fsSL -o boost.tar.gz \
-            "https://archives.boost.io/release/${BOOST_VERSION}/source/boost_${BOOST_VERSION_UNDERSCORE}.tar.gz"
-          tar xzf boost.tar.gz
-          cd "boost_${BOOST_VERSION_UNDERSCORE}"
-          ./bootstrap.sh --with-libraries=serialization --prefix=${{ runner.temp }}/boost-install
-          ./b2 install --with-serialization link=shared -j"$(getconf _NPROCESSORS_ONLN)"
-
-      - name: Point CMake at Boost
-        run: echo "CMAKE_PREFIX_PATH=${{ runner.temp }}/boost-install" >> "$GITHUB_ENV"
 
       # For the time being, generate a CMake build directory aligned as if this was a submodule (i.e., under extern/)
       # However, don't use the code or CMakeLists.txt there (and don't use ngen-submod-build)
