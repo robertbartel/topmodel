@@ -9,9 +9,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Cache Boost
+    # Restore and save separately rather than with the combined cache action, where save runs as a post step.
+    # This is to avoid side effects of any workspace-replacement trickery that may be occurring.
+    - name: Restore Boost
       id: cache-boost
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: ${{ runner.temp }}/boost-install
         key: boost-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
@@ -32,6 +34,13 @@ runs:
         cd "$dir"
         ./bootstrap.sh --with-libraries=serialization --prefix=${{ runner.temp }}/boost-install
         ./b2 install --with-serialization link=shared -j"$(getconf _NPROCESSORS_ONLN)"
+
+    - name: Save Boost
+      if: steps.cache-boost.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/boost-install
+        key: ${{ steps.cache-boost.outputs.cache-primary-key }}
 
     - name: Point CMake at Boost
       shell: bash
